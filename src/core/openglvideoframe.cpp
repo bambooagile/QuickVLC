@@ -17,24 +17,38 @@
  * along with QuickVLC. If not, see <https://www.gnu.org/licenses/>.
  ******************************************************************************/
 
-#include "videoframe.h"
+#include "openglvideoframe.h"
+#include <QtQuick/qsgtexture_platform.h>
 
 namespace Vlc {
 
-VideoFrame::VideoFrame(QOpenGLFramebufferObject *fbo) : AbstractVideoFrame()
+OpenGLVideoFrame::OpenGLVideoFrame(int width, int height, QQuickWindow *window) 
+    : AbstractVideoFrame()
+    , m_fbo(width, height)
+    , m_window(window)
 {
-    m_textureId = fbo->texture();
-
-    setSize(fbo->size());
+    setSize(m_fbo.size());
 }
 
-VideoFrame::~VideoFrame()
+OpenGLVideoFrame::~OpenGLVideoFrame()
 {
 }
 
-GLuint VideoFrame::texture() const
+GLuint OpenGLVideoFrame::texture() const
 {
-    return m_textureId;
+    return m_fbo.texture();
+}
+
+bool OpenGLVideoFrame::isFlipped() const
+{
+    //OpenGL textures are upside down
+    return true;
+}
+
+QSGTexture *OpenGLVideoFrame::getQSGTexture()
+{
+    return QNativeInterface::QSGOpenGLTexture::fromNative(
+        m_fbo.texture(), m_window, size());
 }
 
 }  // namespace Vlc

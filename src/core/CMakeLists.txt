@@ -29,9 +29,8 @@ set(QUICKVLC_CORE_HEADERS
     media.h
     abstractvideostream.h
     vlc.h
-    openglvideostream.h
     abstractvideoframe.h
-    videoframe.h
+    videoframepool.h
 )
 
 set(QUICKVLC_CORE_SOURCES
@@ -43,9 +42,8 @@ set(QUICKVLC_CORE_SOURCES
     media.cpp
     abstractvideostream.cpp
     vlc.cpp
-    openglvideostream.cpp
     abstractvideoframe.cpp
-    videoframe.cpp
+    videoframepool.cpp
 )
 
 IF(MSVC OR MINGW)
@@ -53,7 +51,22 @@ IF(MSVC OR MINGW)
         compat/asprintf.c
         compat/vasprintf.c
     )
+    list(APPEND QUICKVLC_CORE_SOURCES
+        d3d11videostream.cpp
+    )
+    list(APPEND QUICKVLC_CORE_HEADERS
+        d3d11videostream.h
+    )
 ENDIF()
+list(APPEND QUICKVLC_CORE_HEADERS
+    openglvideostream.h
+    openglvideoframe.h
+)
+list(APPEND QUICKVLC_CORE_SOURCES
+    openglvideostream.cpp
+    openglvideoframe.cpp
+)
+
 
 add_library(${QUICKVLC_CORE} SHARED ${QUICKVLC_CORE_SOURCES} ${QUICKVLC_CORE_HEADERS} )
 
@@ -77,9 +90,9 @@ target_include_directories(${QUICKVLC_CORE}
 target_link_libraries(${QUICKVLC_CORE}
     PRIVATE
         Qt6::Core
+        Qt6::Quick
         Qt6::OpenGL
-        ${LIBVLC_LIBRARY}
-        ${LIBVLCCORE_LIBRARY}
+        LIBVLC::LIBVLC
 )
 
 target_compile_definitions(${QUICKVLC_CORE} PRIVATE QUICKVLC_CORE_LIBRARY)

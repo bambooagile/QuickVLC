@@ -22,9 +22,9 @@
 #include <QPointer>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QMutex>
 
 #include "core/abstractvideoframe.h"
-#include "core/videoframe.h"
 #include "core/vlc.h"
 #include "mediasource.h"
 #include "qml_shared_export.h"
@@ -67,7 +67,7 @@ public:
 
     void setCropRatio(int cropRatio);
 
-    void presentFrame(const std::shared_ptr<Vlc::VideoFrame> &frame);
+    void presentFrame();
 
 signals:
     void contextReady(QOpenGLContext *ctx);
@@ -88,12 +88,12 @@ protected:
 private:
     FrameFillRect calculateFillMode(quint16 fw, quint16 fh);
 
-    QPointer<MediaSource> m_source;
+    QPointer<MediaSource> m_source = nullptr;
+     
+    Vlc::Enum::FillMode m_fillMode = Vlc::Enum::PreserveAspectFit;
+    Vlc::Enum::Ratio m_aspectRatio = Vlc::Enum::Ratio::Original;
+    Vlc::Enum::Ratio m_cropRatio = Vlc::Enum::Ratio::Original;
 
-    Vlc::Enum::FillMode m_fillMode;
-    Vlc::Enum::Ratio m_aspectRatio;
-    Vlc::Enum::Ratio m_cropRatio;
-
-    std::shared_ptr<Vlc::AbstractVideoFrame> m_frame;
     bool m_frameUpdated;
+    QMutex m_frameMutex;
 };

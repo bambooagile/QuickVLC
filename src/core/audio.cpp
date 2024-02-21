@@ -74,7 +74,7 @@ int Audio::volume() const
 
 void Audio::setVolume(int volume)
 {
-    if (m_mediaPlayer != nullptr && volume != Audio::volume()) {
+    if (m_mediaPlayer != nullptr /*&& volume != Audio::volume()*/) {
         libvlc_audio_set_volume(m_mediaPlayer, volume);
 
         Error::printErrorMsg();

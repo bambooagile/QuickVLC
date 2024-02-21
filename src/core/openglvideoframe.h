@@ -20,23 +20,36 @@
 #pragma once
 
 #include <QOpenGLFramebufferObject>
+#include <QQueue>
+#include <QMutex>
+#include <QWaitCondition>
 
 #include "abstractvideoframe.h"
 #include "core_shared_export.h"
 
 namespace Vlc {
 
-class QUICKVLC_CORE_EXPORT VideoFrame : public AbstractVideoFrame
+class QUICKVLC_CORE_EXPORT OpenGLVideoFrame : public AbstractVideoFrame
 {
 public:
-    explicit VideoFrame(QOpenGLFramebufferObject *fbo);
+    explicit OpenGLVideoFrame(int width, int height, QQuickWindow *window);
 
-    ~VideoFrame();
+    ~OpenGLVideoFrame();
+
+    QOpenGLFramebufferObject &fbo()
+    {
+        return m_fbo;
+    }
 
     GLuint texture() const;
 
+    bool isFlipped() const override;
+
+    QSGTexture *getQSGTexture() override;
+
 private:
-    GLuint m_textureId;
+    QOpenGLFramebufferObject m_fbo;
+    QQuickWindow *m_window = nullptr;
 };
 
 }  // namespace Vlc

@@ -18,20 +18,28 @@
 
 #include "videonode.h"
 
-VideoNode::VideoNode() : m_geometry { QSGGeometry::defaultAttributes_TexturedPoint2D(), 4 }
+VideoNode::VideoNode()
 {
-    setGeometry(&m_geometry);
-    setMaterial(&m_material);
-}
-
-void VideoNode::setRect(const QRectF &rect, const QRectF &sourceRect)
-{
-    QSGGeometry::updateTexturedRectGeometry(&m_geometry, rect, sourceRect);
-
-    markDirty(QSGNode::DirtyGeometry);
+    setFiltering(QSGTexture::Linear);
+    setOwnsTexture(true);
 }
 
 void VideoNode::updateFrame(const std::shared_ptr<Vlc::AbstractVideoFrame> &frame)
 {
-    m_material.updateFrame(frame);
+    m_frame = frame;
+    setTexture(frame->getQSGTexture());
+
+    if (frame->isFlipped())
+        setTextureCoordinatesTransform(MirrorVertically);
+    else
+        setTextureCoordinatesTransform(NoTransform);
+
+    markDirty(QSGNode::DirtyMaterial);
+}
+
+QSize VideoNode::frameSize() const
+{
+    if (!m_frame)
+        return {};
+    return m_frame->size();
 }

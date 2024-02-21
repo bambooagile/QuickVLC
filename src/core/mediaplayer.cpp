@@ -29,6 +29,7 @@ namespace Vlc {
 
 MediaPlayer::MediaPlayer(Instance *instance) : QObject { instance }
 {
+    m_vlcInstance = instance->core();
     m_vlcMediaPlayer = libvlc_media_player_new(instance->core());
     m_vlcEvents = libvlc_media_player_event_manager(m_vlcMediaPlayer);
 
@@ -40,6 +41,14 @@ MediaPlayer::MediaPlayer(Instance *instance) : QObject { instance }
     m_media = nullptr;
 
     createCoreConnections();
+
+    connect(this, &MediaPlayer::nothingSpecial, this, &MediaPlayer::playbackStateChanged);
+    connect(this, &MediaPlayer::opening, this, &MediaPlayer::playbackStateChanged);
+    connect(this, &MediaPlayer::paused, this, &MediaPlayer::playbackStateChanged);
+    connect(this, &MediaPlayer::playing, this, &MediaPlayer::playbackStateChanged);
+    connect(this, &MediaPlayer::error, this, &MediaPlayer::playbackStateChanged);
+    connect(this, &MediaPlayer::stopping, this, &MediaPlayer::playbackStateChanged);
+    connect(this, &MediaPlayer::stopped, this, &MediaPlayer::playbackStateChanged);
 
     Error::printErrorMsg();
 }
@@ -65,11 +74,7 @@ libvlc_event_manager_t *MediaPlayer::eventManager() const
 
 int MediaPlayer::length() const
 {
-    auto length = libvlc_media_player_get_length(m_vlcMediaPlayer);
-
-    Error::printErrorMsg();
-
-    return length;
+    return m_length;
 }
 
 libvlc_media_t *MediaPlayer::currentMediaCore()
@@ -93,17 +98,13 @@ void MediaPlayer::openOnly(Media *media)
     m_media = media;
 
     libvlc_media_player_set_media(m_vlcMediaPlayer, media->core());
-
+    
     Error::printErrorMsg();
 }
 
 int MediaPlayer::time() const
 {
-    auto time = libvlc_media_player_get_time(m_vlcMediaPlayer);
-
-    Error::printErrorMsg();
-
-    return time;
+    return m_time;
 }
 
 bool MediaPlayer::seekable() const
@@ -125,7 +126,25 @@ float MediaPlayer::position() const
         return -1;
     }
 
-    return libvlc_media_player_get_position(m_vlcMediaPlayer);
+    return m_position;
+}
+
+float MediaPlayer::rate() const
+{
+    if (!m_vlcMediaPlayer) {
+        return -1;
+    }
+
+    return m_rate;
+}
+
+QSize MediaPlayer::videoResolution() const
+{
+    if (!m_vlcMediaPlayer) {
+        return QSize();
+    }
+
+    return m_videoResolution;
 }
 
 float MediaPlayer::sampleAspectRatio() const
@@ -141,20 +160,12 @@ float MediaPlayer::sampleAspectRatio() const
 
 Enum::PlaybackState MediaPlayer::playbackState() const
 {
-    if (!libvlc_media_player_get_media(m_vlcMediaPlayer)) {
-        return Enum::Idle;
-    }
-
-    auto state = libvlc_media_player_get_state(m_vlcMediaPlayer);
-
-    Error::printErrorMsg();
-
-    return Enum::PlaybackState(state);
+    return m_playerState;
 }
 
 void MediaPlayer::setTime(int time)
 {
-    if (!(playbackState() == Enum::Buffering || playbackState() == Enum::Playing || playbackState() == Enum::Paused)) {
+    if (!(playbackState() == Enum::Playing || playbackState() == Enum::Paused)) {
         return;
     }
 
@@ -250,32 +261,104 @@ void MediaPlayer::stop()
     Error::printErrorMsg();
 }
 
+void MediaPlayer::parse()
+{
+    libvlc_event_manager_t *eventManager = libvlc_media_event_manager(currentMediaCore());
+    libvlc_event_attach(eventManager, libvlc_MediaParsedChanged, libvlc_callback, this);
+    if (libvlc_media_parse_request(m_vlcInstance, currentMediaCore(), libvlc_media_parse_local, 0) == -1){
+        m_videoResolution = QSize();
+        emit videoResolutionChanged(m_videoResolution);
+    }
+}
+
+void MediaPlayer::checkParseStatus()
+{
+    libvlc_media_parsed_status_t status = libvlc_media_get_parsed_status(currentMediaCore());
+    switch (status) {
+    case libvlc_media_parsed_status_done: {
+        libvlc_media_tracklist_t *tracklist = libvlc_media_get_tracklist(currentMediaCore(), libvlc_track_video);
+        if (libvlc_media_tracklist_count(tracklist) > 0) {
+            const libvlc_media_track_t *p_track = libvlc_media_tracklist_at(tracklist, 0);
+            QSize resolution = QSize(p_track->video->i_width, p_track->video->i_height);
+            if (resolution.isValid()) {
+                m_videoResolution = resolution;
+                emit videoResolutionChanged(m_videoResolution);
+            }
+        }
+        else{
+            m_videoResolution = QSize();
+            emit videoResolutionChanged(m_videoResolution);
+        }
+        break;
+    }
+    case libvlc_media_parsed_status_skipped:
+    case libvlc_media_parsed_status_failed:
+    case libvlc_media_parsed_status_timeout:
+        m_videoResolution = QSize();
+        emit videoResolutionChanged(m_videoResolution);
+        break;
+    default:
+        break;
+    }
+}
+
 void MediaPlayer::libvlc_callback(const libvlc_event_t *event, void *data)
 {
     auto *core = static_cast<MediaPlayer *>(data);
 
     switch (event->type) {
     case libvlc_MediaPlayerMediaChanged:
+        core->parse();
         emit core->mediaChanged(event->u.media_player_media_changed.new_media);
         break;
     case libvlc_MediaPlayerNothingSpecial:
-        emit core->nothingSpecial();
+        QMetaObject::invokeMethod(core, [core]() {
+            core->m_playerState = Enum::Idle;
+            emit core->nothingSpecial();
+        });
         break;
     case libvlc_MediaPlayerOpening:
-        emit core->opening();
+        QMetaObject::invokeMethod(core, [core]() {
+            core->m_playerState = Enum::Opening;
+            emit core->opening();
+        });
         break;
     case libvlc_MediaPlayerBuffering:
         emit core->buffering(event->u.media_player_buffering.new_cache);
         emit core->buffering(qRound(event->u.media_player_buffering.new_cache));
         break;
-    case libvlc_MediaPlayerPlaying:
-        emit core->playing();
+    case libvlc_MediaPlayerPlaying: {
+        QMetaObject::invokeMethod(core, [core]() {
+            core->m_playerState = Enum::Playing;
+            emit core->playing();
+        });
         break;
+    }
     case libvlc_MediaPlayerPaused:
-        emit core->paused();
+        QMetaObject::invokeMethod(core, [core]() {
+            core->m_playerState = Enum::Paused;
+            emit core->paused();
+        });
+        break;
+    case libvlc_MediaPlayerStopping:
+        QMetaObject::invokeMethod(core, [core]() {
+            core->m_playerState = Enum::Stopping;
+            emit core->paused();
+        });
         break;
     case libvlc_MediaPlayerStopped:
-        emit core->stopped();
+        QMetaObject::invokeMethod(core, [core]() {
+            core->m_playerState = Enum::Stopped;
+            core->m_time = 0;
+            emit core->timeChanged(core->m_time);
+            core->m_length = 0;
+            emit core->lengthChanged(core->m_length);
+            core->m_position = 0.0f;
+            emit core->positionChanged(core->m_position);
+            core->m_rate = 1.0f;
+            emit core->rateChanged(core->m_rate);
+            emit core->stopped();
+        });
         break;
     case libvlc_MediaPlayerForward:
         emit core->forward();
@@ -283,42 +366,42 @@ void MediaPlayer::libvlc_callback(const libvlc_event_t *event, void *data)
     case libvlc_MediaPlayerBackward:
         emit core->backward();
         break;
-        //    case libvlc_MediaPlayerEndReached:
-        //        emit core->end();
-        //        break;
     case libvlc_MediaPlayerEncounteredError:
-        emit core->error();
+        QMetaObject::invokeMethod(core, [core]() {
+            core->m_playerState = Enum::Error;
+            emit core->error();
+        });
         break;
     case libvlc_MediaPlayerTimeChanged:
-        emit core->timeChanged(event->u.media_player_time_changed.new_time);
+        QMetaObject::invokeMethod(core, [core, new_time = event->u.media_player_time_changed.new_time]() {
+            core->m_time = new_time;
+            emit core->timeChanged(core->m_time);
+        });
         break;
-    case libvlc_MediaPlayerPositionChanged:
-        emit core->positionChanged(event->u.media_player_position_changed.new_position);
+    case libvlc_MediaPlayerPositionChanged: {
+        QMetaObject::invokeMethod(core, [core, new_position = event->u.media_player_position_changed.new_position]() {
+            core->m_position = new_position;
+            emit core->positionChanged(core->m_position);
+        });
         break;
+    }
     case libvlc_MediaPlayerSeekableChanged:
         emit core->seekableChanged(event->u.media_player_seekable_changed.new_seekable);
         break;
     case libvlc_MediaPlayerPausableChanged:
         emit core->pausableChanged(event->u.media_player_pausable_changed.new_pausable);
         break;
-        //    case libvlc_MediaPlayerTitleChanged:
-        //        emit core->titleChanged(event->u.media_player_title_changed.new_title);
-        //        break;
-        //    case libvlc_MediaPlayerSnapshotTaken:
-        //        emit core->snapshotTaken(event->u.media_player_snapshot_taken.psz_filename);
-        //        break;
     case libvlc_MediaPlayerLengthChanged:
-        emit core->lengthChanged(event->u.media_player_length_changed.new_length);
+        QMetaObject::invokeMethod(core, [core, new_length = event->u.media_player_length_changed.new_length]() {
+            core->m_length = new_length;
+            emit core->lengthChanged(core->m_length);
+        });
         break;
-        //    case libvlc_MediaPlayerVout:
-        //        emit core->vout(event->u.media_player_vout.new_count);
-        //        break;
+    case libvlc_MediaParsedChanged:
+        core->checkParseStatus();
+        break;
     default:
         break;
-    }
-
-    if (event->type >= libvlc_MediaPlayerNothingSpecial && event->type <= libvlc_MediaPlayerEncounteredError) {
-        emit core->playbackStateChanged();
     }
 }
 

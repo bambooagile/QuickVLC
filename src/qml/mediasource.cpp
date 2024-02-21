@@ -56,6 +56,7 @@ void MediaSource::deregisterVideoOutput(VideoOutput *output)
 
 void MediaSource::handleWindowChanged(QQuickWindow *window)
 {
+    m_videoStream->windowChanged(window);
     if (window) {
         connect(window, &QQuickWindow::beforeSynchronizing, this, &MediaSource::sync, Qt::DirectConnection);
         connect(window, &QQuickWindow::sceneGraphInvalidated, this, &MediaSource::cleanup, Qt::DirectConnection);
@@ -69,4 +70,9 @@ void MediaSource::sync()
 
 void MediaSource::cleanup()
 {
+}
+
+std::shared_ptr<Vlc::AbstractVideoFrame> MediaSource::getVideoFrame()
+{
+    return m_videoStream->getVideoFrame();
 }

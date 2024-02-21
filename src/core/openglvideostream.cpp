@@ -19,13 +19,18 @@
 #include "openglvideostream.h"
 
 #include <QOpenGLContext>
+#include <QQuickItem>
 
 namespace Vlc {
 
-OpenGLVideoStream::OpenGLVideoStream(QObject *parent) : QObject { parent }
+static const int POOL_SIZE = 7;
+static const int INFLIGHT_RESERVED = 3;
+
+OpenGLVideoStream::OpenGLVideoStream(QQuickItem *parent)
+    : AbstractVideoStream { parent }
 {
-    m_context = new QOpenGLContext(parent);
-    m_surface = new QOffscreenSurface(nullptr, parent);
+    m_context = new QOpenGLContext(this);
+    m_surface = new QOffscreenSurface(nullptr, this);
 }
 
 OpenGLVideoStream::~OpenGLVideoStream()
@@ -33,23 +38,27 @@ OpenGLVideoStream::~OpenGLVideoStream()
     cleanup();
 }
 
+void OpenGLVideoStream::windowChanged(QQuickWindow *window)
+{
+    m_window = window;
+
+    if (!window)
+        return;
+
+    m_surface->setFormat(window->format());
+    m_surface->create();
+}
+
 void OpenGLVideoStream::initContext()
 {
-    //    Q_ASSERT(QSGRendererInterface::isApiRhiBased(QSGRendererInterface::OpenGL));
-
     if (m_context->isValid()) {
         return;
     }
 
     auto *context = QOpenGLContext::currentContext();
-
-    m_surface->setFormat(context->format());
-    m_surface->create();
-
     m_context->setFormat(context->format());
     m_context->setShareContext(context);
     m_context->create();
-
     initializeOpenGLFunctions();
 
     m_videoReady.release();
@@ -60,39 +69,29 @@ libvlc_video_engine_t OpenGLVideoStream::videoEngine()
     return m_context->isOpenGLES() ? libvlc_video_engine_gles2 : libvlc_video_engine_opengl;
 }
 
-std::shared_ptr<VideoFrame> OpenGLVideoStream::getVideoFrame()
+std::shared_ptr<AbstractVideoFrame> OpenGLVideoStream::getVideoFrame()
 {
     QMutexLocker locker(&m_text_lock);
-
-    if (m_updated) {
-        std::swap(m_idx_swap, m_idx_display);
-
-        if (m_buffers[m_idx_display]) {
-            m_videoFrame = std::make_shared<VideoFrame>(m_buffers[m_idx_display].get());
-        } else {
-            m_videoFrame = {};
-        }
-
-        m_updated = false;
-    }
-
-    return m_videoFrame;
+    return m_readyFrame;
 }
 
-bool OpenGLVideoStream::resize(const libvlc_video_render_cfg_t *cfg, libvlc_video_output_cfg_t *render_cfg)
+bool OpenGLVideoStream::updateOutput(const libvlc_video_render_cfg_t *cfg, libvlc_video_output_cfg_t *render_cfg)
 {
     {
         QMutexLocker locker(&m_text_lock);
 
-        for (auto &buffer : m_buffers) {
-            buffer = std::make_unique<QOpenGLFramebufferObject>(cfg->width, cfg->height);
-        }
+        m_pool = std::make_shared<VideoFramePool>(INFLIGHT_RESERVED);
+        for (int i = 0; i < POOL_SIZE; i++)
+            m_pool->enqueue(new OpenGLVideoFrame(cfg->width, cfg->height, m_window));
+        AbstractVideoFrame* frame = m_pool->pop(0);
+        assert(frame);
+        m_renderingFrame = std::make_shared<PooledVideoFrame>(frame, m_pool);
     }
 
     m_width = cfg->width;
     m_height = cfg->height;
 
-    m_buffers[m_idx_render]->bind();
+    m_renderingFrame->as<OpenGLVideoFrame>()->fbo().bind();
 
     render_cfg->opengl_format = GL_RGBA;
     render_cfg->full_range = true;
@@ -110,7 +109,7 @@ bool OpenGLVideoStream::setup(const libvlc_video_setup_device_cfg_t *cfg, libvlc
     Q_UNUSED(out)
 
     if (!QOpenGLContext::supportsThreadedOpenGL()) {
-        return false;
+        //return false;
     }
 
     /* Wait for rendering view to be ready. */
@@ -126,30 +125,37 @@ void OpenGLVideoStream::cleanup()
 {
     m_videoReady.release();
 
-    QMutexLocker locker(&m_text_lock);
+    {
+        QMutexLocker locker(&m_text_lock);
 
-    if (m_width == 0 && m_height == 0) {
-        return;
+        m_renderingFrame.reset();
+        m_readyFrame.reset();
+        m_pool.reset();
     }
-
-    for (auto &buffer : m_buffers) {
-        buffer.reset(nullptr);
-    }
+    emit frameUpdated();
 }
 
 void OpenGLVideoStream::swap()
 {
-    QMutexLocker locker(&m_text_lock);
+    m_context->functions()->glFinish();
+    {
+        QMutexLocker locker(&m_text_lock);
 
-    m_updated = true;
+        m_renderingFrame->as<OpenGLVideoFrame>()->fbo().release();
+        m_readyFrame = m_renderingFrame;
+    }
+    emit frameUpdated();
 
-    QMetaObject::invokeMethod(this, &OpenGLVideoStream::frameUpdated, Qt::QueuedConnection);
+    AbstractVideoFrame* frame = m_pool->pop(0);
+    assert(frame);
+    m_renderingFrame = std::make_shared<PooledVideoFrame>(frame, m_pool);
+    m_renderingFrame->as<OpenGLVideoFrame>()->fbo().bind();
+}
 
-    //    frameUpdated();
-
-    std::swap(m_idx_swap, m_idx_render);
-
-    m_buffers[m_idx_render]->bind();
+bool OpenGLVideoStream::selectPlane(size_t plane, void *output)
+{
+    //N/A
+    return true;
 }
 
 bool OpenGLVideoStream::makeCurrent(bool isCurrent)

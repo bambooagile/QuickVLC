@@ -31,6 +31,8 @@ AudioOutput::~AudioOutput()
 void AudioOutput::init(Vlc::MediaPlayer *mediaPlayer)
 {
     m_audio = new Vlc::Audio(mediaPlayer);
+	connect(m_audio, &Vlc::Audio::muteChanged, this, &AudioOutput::mutedChanged);
+	connect(m_audio, &Vlc::Audio::volumeChanged, this, &AudioOutput::volumeChanged);
 }
 
 bool AudioOutput::muted()

@@ -52,6 +52,7 @@ class QUICKVLC_QML_EXPORT MediaPlayer : public MediaSource
     Q_PROPERTY(bool seekable READ seekable NOTIFY seekableChanged)
     Q_PROPERTY(QUrl source READ source WRITE setSource NOTIFY sourceChanged)
     Q_PROPERTY(int playbackState READ playbackState NOTIFY playbackStateChanged)
+    Q_PROPERTY(QSize videoResolution READ videoResolution NOTIFY videoResolutionChanged)
 
 public:
     explicit MediaPlayer(QQuickItem *parent = nullptr);
@@ -82,6 +83,8 @@ public:
 
     int playbackState() const;
 
+    QSize videoResolution() const;
+
 signals:
     void audioOutputChanged();
     void autoplayChanged();
@@ -92,6 +95,7 @@ signals:
     void sourceChanged();
     void errorOccurred(QString errorString);
     void playbackStateChanged();
+    void videoResolutionChanged();
 
 private:
     void open();

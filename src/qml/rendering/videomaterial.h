@@ -20,7 +20,7 @@
 
 #include <QSGMaterial>
 
-#include "core/videoframe.h"
+#include "core/abstractvideoframe.h"
 #include "rendering/videotexture.h"
 
 class VideoMaterial : public QSGMaterial
@@ -37,6 +37,5 @@ public:
     void updateFrame(const std::shared_ptr<Vlc::AbstractVideoFrame> &frame);
 
 private:
-    std::unique_ptr<VideoTexture> m_texture;
-    std::shared_ptr<Vlc::VideoFrame> m_videoFrame;
+    std::unique_ptr<QSGTexture> m_texture;
 };

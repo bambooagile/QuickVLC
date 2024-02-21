@@ -72,19 +72,12 @@ target_include_directories(${QUICKVLC_QML}
         ${CMAKE_BINARY_DIR}/include
 )
 
-target_include_directories(${QUICKVLC_QML}
-    PRIVATE
-        ${LIBVLC_EXTRA_INCLUDE_DIR}
-        ${LIBVLC_EXTRA_INCLUDE_DIR}/vlc/plugins
-        ${LIBVLC_INCLUDE_DIR}
-        ${LIBVLC_INCLUDE_DIR}/vlc/plugins
-)
-
 target_link_libraries(${QUICKVLC_QML}
     PRIVATE
         Qt6::Core
         Qt6::Quick
         Qt6::QuickPrivate
+        LIBVLC::LIBVLC
         ${QUICKVLC_CORE}
 )
 

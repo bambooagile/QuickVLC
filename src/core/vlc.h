@@ -95,7 +95,7 @@ public:
 
     enum Scale { NoScale, S_1_05, S_1_1, S_1_2, S_1_3, S_1_4, S_1_5, S_1_6, S_1_7, S_1_8, S_1_9, S_2_0 };
 
-    enum PlaybackState { Idle, Opening, Buffering, Playing, Paused, Stopped, Ended, Error };
+    enum PlaybackState { Idle, Opening, Playing, Paused, Stopped, Stopping, Error };
 
     enum VideoCodec { NoVideo, MPEG2Video, MPEG4Video, H264, Theora };
 

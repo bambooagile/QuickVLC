@@ -19,6 +19,8 @@
 
 #pragma once
 
+#include <vlc/vlc.h>
+
 #include <QObject>
 
 #include "core_shared_export.h"
@@ -28,6 +30,7 @@ struct libvlc_event_t;
 struct libvlc_event_manager_t;
 struct libvlc_media_t;
 struct libvlc_media_player_t;
+struct libvlc_instance_t;
 
 namespace Vlc {
 
@@ -59,11 +62,15 @@ public:
 
     float position() const;
 
+    float rate() const;
+
     float sampleAspectRatio() const;
 
     float playbackRate() const;
 
     Enum::PlaybackState playbackState() const;
+
+    QSize videoResolution() const;
 
 public slots:
     void setTime(int time);
@@ -86,20 +93,24 @@ signals:
     void backward();
     void buffering(float buffer);
     void buffering(int buffer);
-    void end();
-    void error();
     void forward();
     void lengthChanged(int length);
     void mediaChanged(libvlc_media_t *media);
-    void nothingSpecial();
-    void opening();
     void pausableChanged(bool pausable);
-    void paused();
-    void playing();
     void positionChanged(float position);
     void seekableChanged(bool seekable);
-    void stopped();
     void timeChanged(int time);
+    void rateChanged(float rate);
+    void videoResolutionChanged(QSize resolution);
+
+    // player states
+    void nothingSpecial();
+    void opening();
+    void paused();
+    void playing();
+    void error();
+    void stopping();
+    void stopped();
     void playbackStateChanged();
 
 private:
@@ -107,9 +118,20 @@ private:
 
     void createCoreConnections();
     void removeCoreConnections();
+    void parse();
+    void checkParseStatus();
+
+    Enum::PlaybackState m_playerState;
 
     libvlc_media_player_t *m_vlcMediaPlayer;
     libvlc_event_manager_t *m_vlcEvents;
+    libvlc_instance_t *m_vlcInstance;
+
+    qint64 m_time = 0;
+    qint64 m_length = 0;
+    double m_position = 0.0f;
+    double m_rate = 1.0f;
+    QSize m_videoResolution;
 
     Media *m_media;
 };

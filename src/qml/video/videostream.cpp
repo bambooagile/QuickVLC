@@ -21,8 +21,28 @@
 #include "core/mediaplayer.h"
 #include "videooutput.h"
 
-VideoStream::VideoStream(QObject *parent) : Vlc::OpenGLVideoStream(parent)
+#if defined(Q_OS_WIN)
+#include <core/d3d11videostream.h>
+#endif
+#include <core/openglvideostream.h>
+
+VideoStream::VideoStream(QQuickItem *parent) : QObject(parent)
 {
+#if defined(Q_OS_WIN)
+    if (QQuickWindow::graphicsApi() == QSGRendererInterface::Direct3D11) {
+        m_videostream = std::make_unique<Vlc::D3D11VideoStream>();
+    } else
+#endif
+        if (QQuickWindow::graphicsApi() == QSGRendererInterface::OpenGLRhi) {
+        m_videostream = std::make_unique<Vlc::OpenGLVideoStream>();
+    } else {
+        assert(false);
+    }
+
+    qInfo() << "videostream: Using GraphicsAPI: " << QQuickWindow::graphicsApi();
+
+    connect(m_videostream.get(), &Vlc::AbstractVideoStream::frameUpdated, this, &VideoStream::frameUpdated,
+        Qt::QueuedConnection);
 }
 
 VideoStream::~VideoStream()
@@ -33,12 +53,22 @@ void VideoStream::init(Vlc::MediaPlayer *player)
 {
     m_player = player;
 
-    setCallbacks(player);
+    m_videostream->setCallbacks(player);
+}
+
+void VideoStream::initContext()
+{
+    m_videostream->initContext();
+}
+
+void VideoStream::windowChanged(QQuickWindow *window)
+{
+    m_videostream->windowChanged(window);
 }
 
 void VideoStream::deinit()
 {
-    unsetCallbacks(m_player);
+    m_videostream->unsetCallbacks(m_player);
 
     m_player = nullptr;
 }
@@ -59,12 +89,12 @@ void VideoStream::deregisterVideoOutput(VideoOutput *output)
 
 void VideoStream::frameUpdated()
 {
-    //    std::shared_ptr<const Vlc::VideoFrame> frame = std::dynamic_pointer_cast<const
-    //    Vlc::VideoFrame>(getVideoFrame());
-
-    auto frame = getVideoFrame();
-
     for (auto *output : m_attachedOutputs) {
-        output->presentFrame(frame);
+        output->presentFrame();
     }
+}
+
+std::shared_ptr<Vlc::AbstractVideoFrame> VideoStream::getVideoFrame()
+{
+    return m_videostream->getVideoFrame();
 }

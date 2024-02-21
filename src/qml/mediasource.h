@@ -27,6 +27,7 @@
 
 namespace Vlc {
 class MediaPlayer;
+class AbstractVideoFrame;
 };
 
 class VideoOutput;
@@ -48,6 +49,8 @@ public:
     virtual void registerVideoOutput(VideoOutput *output);
 
     virtual void deregisterVideoOutput(VideoOutput *output);
+
+    std::shared_ptr<Vlc::AbstractVideoFrame> getVideoFrame();
 
 public slots:
     void sync();
